@@ -50,7 +50,7 @@ export async function create(user: UserInsert): Promise<User> {
 export async function update(id: number, user: UserUpdate): Promise<User> {
   const { data, error } = await supabase
     .from("users")
-    .update(user)
+    .update({ ...user, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select()
     .single();
