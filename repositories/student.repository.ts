@@ -59,7 +59,7 @@ export async function update(
     .single();
 
   if (error) {
-    throw new Error(`Failed to create student : ${error.message}`);
+    throw new Error(`Failed to update student : ${error.message}`);
   }
 
   return data;

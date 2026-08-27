@@ -56,7 +56,7 @@ export async function update(id: number, user: UserUpdate): Promise<User> {
     .single();
 
   if (error) {
-    throw new Error(`Failed to create user : ${error.message}`);
+    throw new Error(`Failed to update user : ${error.message}`);
   }
 
   return data;
