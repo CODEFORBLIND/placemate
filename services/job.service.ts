@@ -71,13 +71,15 @@ export async function updateJob(
   if (validated.preferredCourses !== undefined)
     updateData.preferred_courses = validated.preferredCourses;
   if (validated.jobType !== undefined) updateData.job_type = validated.jobType;
-  if (validated.location !== undefined) updateData.location = validated.location;
+  if (validated.location !== undefined)
+    updateData.location = validated.location;
   if (validated.minCgpa !== undefined) updateData.min_cgpa = validated.minCgpa;
   if (validated.maxBacklogs !== undefined)
     updateData.max_backlogs = validated.maxBacklogs;
   if (validated.applicationDeadline !== undefined)
     updateData.application_deadline = validated.applicationDeadline;
-  if (validated.isActive !== undefined) updateData.is_active = validated.isActive;
+  if (validated.isActive !== undefined)
+    updateData.is_active = validated.isActive;
 
   return await jobRepo.update(id, updateData);
 }
@@ -122,9 +124,11 @@ export async function checkStudentEligibility(
 
   if (job.application_deadline) {
     const deadline = new Date(job.application_deadline);
-    deadline.setHours(23, 59, 59, 999);
-    if (new Date() > deadline) {
-      reasons.push(`Application deadline was ${job.application_deadline}.`);
+    if (!isNaN(deadline.getTime())) {
+      deadline.setHours(23, 59, 59, 999);
+      if (new Date() > deadline) {
+        reasons.push(`Application deadline was ${job.application_deadline}.`);
+      }
     }
   }
 
@@ -175,13 +179,18 @@ export async function getEligibleJobsForStudent(
     return [];
   }
 
-  const activeJobs = await jobRepo.findMany({ isActive: true }, { limit: 100 });
+  const activeJobs = await jobRepo.findMany(
+    { isActive: true },
+    { limit: 1000 },
+  );
 
   const eligibleJobs = activeJobs.filter((job) => {
     if (job.application_deadline) {
       const deadline = new Date(job.application_deadline);
-      deadline.setHours(23, 59, 59, 999);
-      if (new Date() > deadline) return false;
+      if (!isNaN(deadline.getTime())) {
+        deadline.setHours(23, 59, 59, 999);
+        if (new Date() > deadline) return false;
+      }
     }
 
     if (job.preferred_courses && job.preferred_courses.length > 0) {

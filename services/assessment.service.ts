@@ -1,7 +1,7 @@
 import * as assessmentRepo from "@/repositories/assessment.repository";
 import * as studentRepo from "@/repositories/student.repository";
 import type { Database } from "@/types/database";
-import { NotFoundError, validateWithSchema } from "./errors";
+import { NotFoundError, ValidationError, validateWithSchema } from "./errors";
 import {
   recordAssessmentSchema,
   updateAssessmentSchema,
@@ -73,7 +73,9 @@ export async function updateAssessment(
     validated.maxScore !== undefined ? validated.maxScore : current.max_score;
 
   if (score > maxScore) {
-    throw new Error(`Score (${score}) cannot exceed max score (${maxScore})`);
+    throw new ValidationError(
+      `Score (${score}) cannot exceed max score (${maxScore})`,
+    );
   }
 
   const updateData: Parameters<typeof assessmentRepo.update>[1] = {};
@@ -81,7 +83,8 @@ export async function updateAssessment(
   if (validated.title !== undefined) updateData.title = validated.title.trim();
   if (validated.summary !== undefined) updateData.summary = validated.summary;
   if (validated.score !== undefined) updateData.score = validated.score;
-  if (validated.maxScore !== undefined) updateData.max_score = validated.maxScore;
+  if (validated.maxScore !== undefined)
+    updateData.max_score = validated.maxScore;
   if (validated.completedAt !== undefined)
     updateData.completed_at = validated.completedAt;
 
@@ -97,7 +100,7 @@ export async function getStudentPerformanceSummary(
   }
 
   const assessments = await assessmentRepo.findByStudentId(studentId, {
-    limit: 100,
+    limit: 1000,
     sortBy: "created_at",
     ascending: false,
   });

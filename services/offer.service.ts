@@ -125,8 +125,14 @@ export async function updateOfferDetails(
   id: number,
   input: UpdateOfferInput,
 ): Promise<Offer> {
-  await getOfferById(id);
+  const current = await getOfferById(id);
   const validated = validateWithSchema(updateOfferSchema, input);
+
+  if (validated.status !== undefined && validated.status !== current.status) {
+    throw new ValidationError(
+      `Cannot change offer status via this endpoint. Use /respond for ACCEPTED/REJECTED transitions.`,
+    );
+  }
 
   const updateData: Parameters<typeof offerRepo.update>[1] = {};
 
@@ -141,7 +147,10 @@ export async function updateOfferDetails(
   if (validated.joiningDate !== undefined) {
     updateData.joining_date = validated.joiningDate;
   }
-  if (validated.status !== undefined) updateData.status = validated.status;
+
+  if (Object.keys(updateData).length === 0) {
+    return current;
+  }
 
   return await offerRepo.update(id, updateData);
 }
