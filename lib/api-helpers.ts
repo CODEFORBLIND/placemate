@@ -21,10 +21,15 @@ export function handleError(error: unknown): NextResponse {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (error instanceof SyntaxError) {
+    return NextResponse.json(
+      { error: "Invalid JSON payload" },
+      { status: 400 },
+    );
+  }
+
   console.error("Unhandled error:", error);
-  const message =
-    error instanceof Error ? error.message : "Internal server error";
-  return NextResponse.json({ error: message }, { status: 500 });
+  return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 
 export interface PaginationParams {
@@ -37,12 +42,23 @@ export function parsePagination(request: NextRequest): PaginationParams {
   const pageParam = url.searchParams.get("page");
   const limitParam = url.searchParams.get("limit");
 
-  let page = pageParam ? parseInt(pageParam, 10) : 1;
-  let limit = limitParam ? parseInt(limitParam, 10) : 20;
+  let page = 1;
+  let limit = 20;
 
-  if (isNaN(page) || page < 1) page = 1;
-  if (isNaN(limit) || limit < 1) limit = 20;
-  if (limit > 100) limit = 100;
+  if (pageParam !== null) {
+    if (!/^\d+$/.test(pageParam.trim()))
+      throw new ValidationError("Invalid page parameter");
+    page = Number(pageParam);
+  }
+  if (limitParam !== null) {
+    if (!/^\d+$/.test(limitParam.trim()))
+      throw new ValidationError("Invalid limit parameter");
+    limit = Number(limitParam);
+  }
+
+  if (page < 1) throw new ValidationError("page must be >= 1");
+  if (limit < 1 || limit > 100)
+    throw new ValidationError("limit must be between 1 and 100");
 
   return { page, limit };
 }
@@ -82,8 +98,11 @@ export function buildPaginatedResponse<T>(
 
 export function parseId(id: string | undefined): number {
   if (!id) throw new ValidationError("ID is required");
-  const num = parseInt(id, 10);
-  if (isNaN(num) || num <= 0) throw new ValidationError("Invalid ID");
+  const trimmed = id.trim();
+  if (!/^\d+$/.test(trimmed)) throw new ValidationError("Invalid ID");
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num <= 0)
+    throw new ValidationError("Invalid ID");
   return num;
 }
 
@@ -103,7 +122,11 @@ export function parseSortParams(
   defaultSort: string,
 ): { sortBy: string; ascending: boolean } {
   const sortBy = request.nextUrl.searchParams.get("sortBy") || defaultSort;
-  const order = request.nextUrl.searchParams.get("order") || "desc";
+  const orderParam = request.nextUrl.searchParams.get("order") || "desc";
+  const order = orderParam.toLowerCase();
+  if (!["asc", "desc"].includes(order)) {
+    throw new ValidationError(`Invalid order. Allowed: asc, desc`);
+  }
   const ascending = order === "asc";
   if (!allowed.includes(sortBy)) {
     throw new ValidationError(`Invalid sortBy. Allowed: ${allowed.join(", ")}`);

@@ -38,8 +38,25 @@ export function getTokenFromRequest(request: NextRequest): string | null {
   const cookieToken = request.cookies.get(COOKIE_NAME)?.value;
   if (cookieToken) return cookieToken;
   const header = request.headers.get("authorization");
-  if (header?.startsWith("Bearer ")) return header.slice(7);
+  if (header) {
+    const parts = header.trim().split(/\s+/);
+    if (parts.length === 2 && parts[0].toLowerCase() === "bearer") {
+      return parts[1].trim();
+    }
+  }
   return null;
+}
+
+function getCookieMaxAge(): number {
+  const expiresIn = JWT_EXPIRES_IN;
+  const match = expiresIn.match(/^(\d+)([smhd])$/);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    const unit = match[2];
+    const mult: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+    return val * (mult[unit] || 86400);
+  }
+  return 60 * 60 * 24 * 7;
 }
 
 export function setAuthCookie(response: NextResponse, token: string): void {
@@ -48,7 +65,7 @@ export function setAuthCookie(response: NextResponse, token: string): void {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7,
+    maxAge: getCookieMaxAge(),
   });
 }
 
