@@ -26,8 +26,21 @@ export const createOfferSchema = z.object({
     .min(1, { message: "Internship duration must be greater than zero" })
     .nullable()
     .optional(),
-  joiningDate: z.string().trim().nullable().optional(),
-  offeredOn: z.string().trim().optional(),
+  joiningDate: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid joiningDate",
+    }),
+  offeredOn: z
+    .string()
+    .trim()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid offeredOn date",
+    }),
 });
 
 export const respondOfferSchema = z.object({
@@ -55,7 +68,14 @@ export const updateOfferSchema = z.object({
     .min(1, { message: "Internship duration must be greater than zero" })
     .nullable()
     .optional(),
-  joiningDate: z.string().trim().nullable().optional(),
+  joiningDate: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid joiningDate",
+    }),
   status: offerStatusEnum.optional(),
 });
 

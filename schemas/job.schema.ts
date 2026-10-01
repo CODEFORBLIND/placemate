@@ -34,7 +34,14 @@ export const createJobSchema = z.object({
     .min(0, { message: "Maximum allowed backlogs cannot be negative" })
     .nullable()
     .optional(),
-  applicationDeadline: z.string().trim().nullable().optional(),
+  applicationDeadline: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for applicationDeadline",
+    }),
   isActive: z.boolean().default(true).optional(),
 });
 
@@ -68,7 +75,14 @@ export const updateJobSchema = z.object({
     .min(0, { message: "Maximum allowed backlogs cannot be negative" })
     .nullable()
     .optional(),
-  applicationDeadline: z.string().trim().nullable().optional(),
+  applicationDeadline: z
+    .string()
+    .trim()
+    .nullable()
+    .optional()
+    .refine((val) => !val || !isNaN(Date.parse(val)), {
+      message: "Invalid date format for applicationDeadline",
+    }),
   isActive: z.boolean().optional(),
 });
 

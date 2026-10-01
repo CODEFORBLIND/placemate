@@ -19,7 +19,13 @@ export const recordAssessmentSchema = z
       .number()
       .int()
       .min(1, { message: "Max score must be greater than zero" }),
-    completedAt: z.string().trim().optional(),
+    completedAt: z
+      .string()
+      .trim()
+      .optional()
+      .refine((val) => !val || !isNaN(Date.parse(val)), {
+        message: "Invalid completedAt date",
+      }),
   })
   .refine((data) => data.score <= data.maxScore, {
     message: "Score cannot exceed max score",
@@ -44,7 +50,13 @@ export const updateAssessmentSchema = z
       .int()
       .min(1, { message: "Max score must be greater than zero" })
       .optional(),
-    completedAt: z.string().trim().optional(),
+    completedAt: z
+      .string()
+      .trim()
+      .optional()
+      .refine((val) => !val || !isNaN(Date.parse(val)), {
+        message: "Invalid completedAt date",
+      }),
   })
   .refine(
     (data) => {
