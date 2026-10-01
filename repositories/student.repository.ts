@@ -85,9 +85,10 @@ export async function findMany(
   }
 
   if (filters.search) {
-    query = query.or(
-      `full_name.ilike.%${filters.search}%,roll_no.ilike.%${filters.search}%`,
-    );
+    const escaped = filters.search
+      .replace(/[%_\\]/g, "\\$&")
+      .replace(/,/g, "\\,");
+    query = query.or(`full_name.ilike.%${escaped}%,roll_no.ilike.%${escaped}%`);
   }
 
   const {

@@ -25,11 +25,13 @@ export async function findMany(
   let query = supabase.from("companies").select("*");
 
   if (filters.location) {
-    query = query.ilike("location", `%${filters.location}%`);
+    const escaped = filters.location.replace(/[%_\\]/g, "\\$&");
+    query = query.ilike("location", `%${escaped}%`);
   }
 
   if (filters.industry) {
-    query = query.ilike("industry", `%${filters.industry}%`);
+    const escaped = filters.industry.replace(/[%_\\]/g, "\\$&");
+    query = query.ilike("industry", `%${escaped}%`);
   }
 
   if (filters.isHiring !== undefined) {
@@ -73,10 +75,11 @@ export async function findById(id: number): Promise<Company | null> {
 }
 
 export async function findByName(name: string): Promise<Company[]> {
+  const escaped = name.replace(/[%_\\]/g, "\\$&");
   const { data, error } = await supabase
     .from("companies")
     .select("*")
-    .ilike("name", `%${name}%`);
+    .ilike("name", `%${escaped}%`);
 
   if (error) {
     throw new Error(`Failed to search company : ${error.message}`);

@@ -33,7 +33,8 @@ export async function findMany(
   }
 
   if (filters.location) {
-    query = query.ilike("location", `%${filters.location}%`);
+    const escaped = filters.location.replace(/[%_\\]/g, "\\$&");
+    query = query.ilike("location", `%${escaped}%`);
   }
 
   if (filters.jobType) {
