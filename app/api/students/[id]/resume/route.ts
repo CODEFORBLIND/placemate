@@ -11,6 +11,12 @@ export async function PATCH(
     const studentId = parseId(id);
     const body = await request.json();
     const { resumeStoragePath } = body;
+    if (typeof resumeStoragePath !== "string") {
+      return NextResponse.json(
+        { error: "resumeStoragePath must be a string" },
+        { status: 400 },
+      );
+    }
     const student = await studentService.updateResume(
       studentId,
       resumeStoragePath,

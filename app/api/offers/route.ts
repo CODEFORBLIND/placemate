@@ -3,8 +3,11 @@ import {
   handleError,
   parsePagination,
   buildPaginatedResponse,
+  parseId,
+  parseSortParams,
 } from "@/lib/api-helpers";
 import * as offerService from "@/services/offer.service";
+import { ValidationError } from "@/services/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,24 +15,30 @@ export async function GET(request: NextRequest) {
     const studentIdParam = url.searchParams.get("studentId");
     const applicationIdParam = url.searchParams.get("applicationId");
 
+    if (studentIdParam && applicationIdParam) {
+      throw new ValidationError(
+        "Provide either ?studentId= or ?applicationId=, not both",
+      );
+    }
+
     if (applicationIdParam) {
-      const appId = parseInt(applicationIdParam, 10);
+      const appId = parseId(applicationIdParam);
       const offer = await offerService.getOfferByApplicationId(appId);
       return NextResponse.json({ data: offer }, { status: 200 });
     }
 
     if (studentIdParam) {
-      const studentId = parseInt(studentIdParam, 10);
+      const studentId = parseId(studentIdParam);
       const { page, limit } = parsePagination(request);
-      const sortBy =
-        (url.searchParams.get("sortBy") as "offered_on" | "created_at") ||
-        "offered_on";
-      const order = url.searchParams.get("order") || "desc";
-      const ascending = order === "asc";
+      const { sortBy, ascending } = parseSortParams(
+        request,
+        ["offered_on", "created_at"],
+        "offered_on",
+      );
       const data = await offerService.getOffersByStudent(studentId, {
         page,
         limit,
-        sortBy,
+        sortBy: sortBy as "offered_on" | "created_at",
         ascending,
       });
       const paginated = buildPaginatedResponse(request, data, { page, limit });

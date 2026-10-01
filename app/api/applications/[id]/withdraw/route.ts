@@ -11,14 +11,15 @@ export async function POST(
     const appId = parseId(id);
     const body = await request.json();
     const { studentId } = body;
-    if (!studentId)
+    if (studentId === undefined || studentId === null)
       return NextResponse.json(
         { error: "studentId required" },
         { status: 400 },
       );
+    const parsedStudentId = parseId(String(studentId));
     const application = await applicationService.withdrawApplication(
       appId,
-      studentId,
+      parsedStudentId,
     );
     return NextResponse.json(
       { message: "Application withdrawn", data: application },

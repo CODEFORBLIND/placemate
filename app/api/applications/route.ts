@@ -3,8 +3,11 @@ import {
   handleError,
   parsePagination,
   buildPaginatedResponse,
+  parseId,
+  parseSortParams,
 } from "@/lib/api-helpers";
 import * as applicationService from "@/services/application.service";
+import { ValidationError } from "@/services/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,37 +15,67 @@ export async function GET(request: NextRequest) {
     const { page, limit } = parsePagination(request);
     const studentIdParam = url.searchParams.get("studentId");
     const jobIdParam = url.searchParams.get("jobId");
-    const status = url.searchParams.get("status") as
-      | "APPLIED"
-      | "SHORTLISTED"
-      | "INTERVIEWING"
-      | "OFFERED"
-      | "REJECTED"
-      | null;
-    const sortBy =
-      (url.searchParams.get("sortBy") as "applied_on" | "created_at") ||
-      "applied_on";
-    const order = url.searchParams.get("order") || "desc";
-    const ascending = order === "asc";
+    const status = url.searchParams.get("status");
+    if (
+      status &&
+      ![
+        "APPLIED",
+        "SHORTLISTED",
+        "INTERVIEWING",
+        "OFFERED",
+        "REJECTED",
+      ].includes(status)
+    ) {
+      throw new ValidationError("Invalid status");
+    }
+    const { sortBy, ascending } = parseSortParams(
+      request,
+      ["applied_on", "created_at"],
+      "applied_on",
+    );
+
+    if (studentIdParam && jobIdParam) {
+      throw new ValidationError(
+        "Provide either ?studentId= or ?jobId=, not both",
+      );
+    }
 
     if (studentIdParam) {
-      const studentId = parseInt(studentIdParam, 10);
+      const studentId = parseId(studentIdParam);
       const data = await applicationService.getApplicationsByStudent(
         studentId,
-        { page, limit, sortBy, ascending, status: status || undefined },
+        {
+          page,
+          limit,
+          sortBy: sortBy as "applied_on" | "created_at",
+          ascending,
+          status:
+            (status as
+              | "APPLIED"
+              | "SHORTLISTED"
+              | "INTERVIEWING"
+              | "OFFERED"
+              | "REJECTED") || undefined,
+        },
       );
       const paginated = buildPaginatedResponse(request, data, { page, limit });
       return NextResponse.json(paginated, { status: 200 });
     }
 
     if (jobIdParam) {
-      const jobId = parseInt(jobIdParam, 10);
+      const jobId = parseId(jobIdParam);
       const data = await applicationService.getApplicationsByJob(jobId, {
         page,
         limit,
-        sortBy,
+        sortBy: sortBy as "applied_on" | "created_at",
         ascending,
-        status: status || undefined,
+        status:
+          (status as
+            | "APPLIED"
+            | "SHORTLISTED"
+            | "INTERVIEWING"
+            | "OFFERED"
+            | "REJECTED") || undefined,
       });
       const paginated = buildPaginatedResponse(request, data, { page, limit });
       return NextResponse.json(paginated, { status: 200 });

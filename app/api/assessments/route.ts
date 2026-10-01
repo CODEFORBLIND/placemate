@@ -3,6 +3,8 @@ import {
   handleError,
   parsePagination,
   buildPaginatedResponse,
+  parseId,
+  parseSortParams,
 } from "@/lib/api-helpers";
 import * as assessmentService from "@/services/assessment.service";
 
@@ -16,18 +18,18 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    const studentId = parseInt(studentIdParam, 10);
+    const studentId = parseId(studentIdParam);
     const { page, limit } = parsePagination(request);
-    const sortBy =
-      (url.searchParams.get("sortBy") as "created_at" | "score") ||
-      "created_at";
-    const order = url.searchParams.get("order") || "desc";
-    const ascending = order === "asc";
+    const { sortBy, ascending } = parseSortParams(
+      request,
+      ["created_at", "score"],
+      "created_at",
+    );
 
     const data = await assessmentService.getStudentAssessments(studentId, {
       page,
       limit,
-      sortBy,
+      sortBy: sortBy as "created_at" | "score",
       ascending,
     });
     const paginated = buildPaginatedResponse(request, data, { page, limit });
