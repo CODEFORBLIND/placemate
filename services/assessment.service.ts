@@ -1,7 +1,7 @@
 import * as assessmentRepo from "@/repositories/assessment.repository";
 import * as studentRepo from "@/repositories/student.repository";
-import type { Database } from "@/types/database";
-import { NotFoundError, ValidationError, validateWithSchema } from "./errors";
+import type { Assessment } from "@/repositories/assessment.repository";
+import { NotFoundError, ValidationError, validate } from "./errors";
 import {
   recordAssessmentSchema,
   updateAssessmentSchema,
@@ -10,131 +10,96 @@ import {
 } from "@/schemas/assessment.schema";
 
 export type { RecordAssessmentInput, UpdateAssessmentInput };
+export type { Assessment };
 
-type Assessment = Database["public"]["Tables"]["assessments"]["Row"];
-
-export interface StudentPerformanceSummary {
+export type Performance = {
   studentId: number;
-  totalAssessments: number;
-  averageScorePercentage: number;
-  highestScorePercentage: number;
-  latestScorePercentage: number | null;
-  category: "Best" | "Average" | "Poor" | "Not assessed";
-}
+  total: number;
+  averagePercent: number;
+  highestPercent: number;
+  latestPercent: number | null;
+  level: "Best" | "Average" | "Poor" | "Not assessed";
+};
 
-export async function getAssessmentById(id: number): Promise<Assessment> {
+export async function getById(id: number): Promise<Assessment> {
   const assessment = await assessmentRepo.findById(id);
-  if (!assessment) {
-    throw new NotFoundError("Assessment", id);
-  }
+  if (!assessment) throw new NotFoundError("Assessment", id);
   return assessment;
 }
 
-export async function getStudentAssessments(
+export async function listByStudent(
   studentId: number,
-  options: Parameters<typeof assessmentRepo.findByStudentId>[1] = {},
+  page = 1,
+  limit = 20,
 ): Promise<Assessment[]> {
   const student = await studentRepo.findById(studentId);
-  if (!student) {
-    throw new NotFoundError("Student", studentId);
-  }
-  return await assessmentRepo.findByStudentId(studentId, options);
+  if (!student) throw new NotFoundError("Student", studentId);
+  return assessmentRepo.findByStudentId(studentId, page, limit);
 }
 
-export async function recordAssessment(
+export async function record(
   input: RecordAssessmentInput,
 ): Promise<Assessment> {
-  const validated = validateWithSchema(recordAssessmentSchema, input);
-
-  const student = await studentRepo.findById(validated.studentId);
-  if (!student) {
-    throw new NotFoundError("Student", validated.studentId);
-  }
-
-  return await assessmentRepo.create({
-    student_id: validated.studentId,
-    title: validated.title.trim(),
-    summary: validated.summary ?? null,
-    score: validated.score,
-    max_score: validated.maxScore,
-    completed_at: validated.completedAt ?? new Date().toISOString(),
+  const data = validate(recordAssessmentSchema, input);
+  const student = await studentRepo.findById(data.studentId);
+  if (!student) throw new NotFoundError("Student", data.studentId);
+  return assessmentRepo.create({
+    student_id: data.studentId,
+    title: data.title,
+    summary: data.summary ?? null,
+    score: data.score,
+    max_score: data.maxScore,
+    completed_at: data.completedAt ?? new Date().toISOString(),
   });
 }
 
-export async function updateAssessment(
+export async function update(
   id: number,
   input: UpdateAssessmentInput,
 ): Promise<Assessment> {
-  const current = await getAssessmentById(id);
-  const validated = validateWithSchema(updateAssessmentSchema, input);
-
-  const score = validated.score !== undefined ? validated.score : current.score;
-  const maxScore =
-    validated.maxScore !== undefined ? validated.maxScore : current.max_score;
-
-  if (score > maxScore) {
-    throw new ValidationError(
-      `Score (${score}) cannot exceed max score (${maxScore})`,
-    );
-  }
-
-  const updateData: Parameters<typeof assessmentRepo.update>[1] = {};
-
-  if (validated.title !== undefined) updateData.title = validated.title.trim();
-  if (validated.summary !== undefined) updateData.summary = validated.summary;
-  if (validated.score !== undefined) updateData.score = validated.score;
-  if (validated.maxScore !== undefined)
-    updateData.max_score = validated.maxScore;
-  if (validated.completedAt !== undefined)
-    updateData.completed_at = validated.completedAt;
-
-  return await assessmentRepo.update(id, updateData);
+  const current = await getById(id);
+  const data = validate(updateAssessmentSchema, input);
+  const score = data.score ?? current.score;
+  const maxScore = data.maxScore ?? current.max_score;
+  if (score > maxScore)
+    throw new ValidationError("Score cannot exceed max score");
+  return assessmentRepo.update(id, {
+    title: data.title,
+    summary: data.summary,
+    score: data.score,
+    max_score: data.maxScore,
+    completed_at: data.completedAt,
+  });
 }
 
-export async function getStudentPerformanceSummary(
-  studentId: number,
-): Promise<StudentPerformanceSummary> {
+export async function performance(studentId: number): Promise<Performance> {
   const student = await studentRepo.findById(studentId);
-  if (!student) {
-    throw new NotFoundError("Student", studentId);
-  }
-
-  const assessments = await assessmentRepo.findByStudentId(studentId, {
-    limit: 1000,
-    sortBy: "created_at",
-    ascending: false,
-  });
-
-  if (assessments.length === 0) {
+  if (!student) throw new NotFoundError("Student", studentId);
+  const list = await assessmentRepo.findByStudentId(studentId, 1, 200);
+  if (list.length === 0)
     return {
       studentId,
-      totalAssessments: 0,
-      averageScorePercentage: 0,
-      highestScorePercentage: 0,
-      latestScorePercentage: null,
-      category: "Not assessed",
+      total: 0,
+      averagePercent: 0,
+      highestPercent: 0,
+      latestPercent: null,
+      level: "Not assessed",
     };
-  }
-
-  const percentages = assessments.map((a) => (a.score / a.max_score) * 100);
-  const total = percentages.reduce((acc, p) => acc + p, 0);
-  const avg = Math.round(total / percentages.length);
-  const highest = Math.round(Math.max(...percentages));
-  const latest = Math.round(percentages[0]);
-
-  let category: "Best" | "Average" | "Poor" = "Average";
-  if (avg >= 80) {
-    category = "Best";
-  } else if (avg < 50) {
-    category = "Poor";
-  }
-
+  const percents = list.map((a) => (a.score / a.max_score) * 100);
+  const average = Math.round(
+    percents.reduce((sum, p) => sum + p, 0) / percents.length,
+  );
   return {
     studentId,
-    totalAssessments: assessments.length,
-    averageScorePercentage: avg,
-    highestScorePercentage: highest,
-    latestScorePercentage: latest,
-    category,
+    total: list.length,
+    averagePercent: average,
+    highestPercent: Math.round(Math.max(...percents)),
+    latestPercent: Math.round(percents[0]),
+    level: average >= 80 ? "Best" : average < 50 ? "Poor" : "Average",
   };
+}
+
+export async function remove(id: number): Promise<void> {
+  await getById(id);
+  await assessmentRepo.remove(id);
 }

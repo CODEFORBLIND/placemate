@@ -1,4 +1,5 @@
 export * from "./errors";
+export * as authService from "./auth.service";
 export * as userService from "./user.service";
 export * as studentService from "./student.service";
 export * as companyService from "./company.service";

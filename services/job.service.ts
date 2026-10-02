@@ -1,8 +1,8 @@
 import * as jobRepo from "@/repositories/job.repository";
 import * as companyRepo from "@/repositories/company.repository";
 import * as studentRepo from "@/repositories/student.repository";
-import type { Database } from "@/types/database";
-import { NotFoundError, validateWithSchema } from "./errors";
+import type { Job, JobFilters } from "@/repositories/job.repository";
+import { NotFoundError, validate } from "./errors";
 import {
   createJobSchema,
   updateJobSchema,
@@ -11,212 +11,131 @@ import {
 } from "@/schemas/job.schema";
 
 export type { CreateJobInput, UpdateJobInput };
+export type { Job };
 
-type Job = Database["public"]["Tables"]["jobs"]["Row"];
-
-export interface EligibilityResult {
+export type Eligibility = {
   eligible: boolean;
   reasons: string[];
-}
+};
 
-export async function getJobById(id: number): Promise<Job> {
+export async function getById(id: number): Promise<Job> {
   const job = await jobRepo.findById(id);
-  if (!job) {
-    throw new NotFoundError("Job", id);
-  }
+  if (!job) throw new NotFoundError("Job", id);
   return job;
 }
 
-export async function listJobs(
-  filters: Parameters<typeof jobRepo.findMany>[0] = {},
-  options: Parameters<typeof jobRepo.findMany>[1] = {},
+export async function list(
+  filters: JobFilters = {},
+  page = 1,
+  limit = 20,
 ): Promise<Job[]> {
-  return await jobRepo.findMany(filters, options);
+  return jobRepo.findMany(filters, page, limit);
 }
 
-export async function createJob(input: CreateJobInput): Promise<Job> {
-  const validated = validateWithSchema(createJobSchema, input);
-
-  const company = await companyRepo.findById(validated.companyId);
-  if (!company) {
-    throw new NotFoundError("Company", validated.companyId);
-  }
-
-  return await jobRepo.create({
-    company_id: validated.companyId,
-    title: validated.title.trim(),
-    description: validated.description.trim(),
-    preferred_courses: validated.preferredCourses ?? null,
-    job_type: validated.jobType,
-    location: validated.location ?? null,
-    min_cgpa: validated.minCgpa ?? null,
-    max_backlogs: validated.maxBacklogs ?? null,
-    application_deadline: validated.applicationDeadline ?? null,
-    is_active: validated.isActive ?? true,
+export async function create(input: CreateJobInput): Promise<Job> {
+  const data = validate(createJobSchema, input);
+  const company = await companyRepo.findById(data.companyId);
+  if (!company) throw new NotFoundError("Company", data.companyId);
+  return jobRepo.create({
+    company_id: data.companyId,
+    title: data.title,
+    description: data.description,
+    preferred_courses: data.preferredCourses ?? null,
+    job_type: data.jobType,
+    location: data.location ?? null,
+    min_cgpa: data.minCgpa ?? null,
+    max_backlogs: data.maxBacklogs ?? null,
+    application_deadline: data.applicationDeadline ?? null,
+    is_active: data.isActive ?? true,
   });
 }
 
-export async function updateJob(
-  id: number,
-  input: UpdateJobInput,
-): Promise<Job> {
-  await getJobById(id);
-  const validated = validateWithSchema(updateJobSchema, input);
-
-  const updateData: Parameters<typeof jobRepo.update>[1] = {};
-
-  if (validated.title !== undefined) updateData.title = validated.title.trim();
-  if (validated.description !== undefined)
-    updateData.description = validated.description.trim();
-  if (validated.preferredCourses !== undefined)
-    updateData.preferred_courses = validated.preferredCourses;
-  if (validated.jobType !== undefined) updateData.job_type = validated.jobType;
-  if (validated.location !== undefined)
-    updateData.location = validated.location;
-  if (validated.minCgpa !== undefined) updateData.min_cgpa = validated.minCgpa;
-  if (validated.maxBacklogs !== undefined)
-    updateData.max_backlogs = validated.maxBacklogs;
-  if (validated.applicationDeadline !== undefined)
-    updateData.application_deadline = validated.applicationDeadline;
-  if (validated.isActive !== undefined)
-    updateData.is_active = validated.isActive;
-
-  return await jobRepo.update(id, updateData);
+export async function update(id: number, input: UpdateJobInput): Promise<Job> {
+  await getById(id);
+  const data = validate(updateJobSchema, input);
+  return jobRepo.update(id, {
+    title: data.title,
+    description: data.description,
+    preferred_courses: data.preferredCourses,
+    job_type: data.jobType,
+    location: data.location,
+    min_cgpa: data.minCgpa,
+    max_backlogs: data.maxBacklogs,
+    application_deadline: data.applicationDeadline,
+    is_active: data.isActive,
+  });
 }
 
-export async function setJobActiveStatus(
-  id: number,
-  isActive: boolean,
-): Promise<Job> {
-  await getJobById(id);
-  return await jobRepo.update(id, { is_active: isActive });
+export async function setActive(id: number, isActive: boolean): Promise<Job> {
+  await getById(id);
+  return jobRepo.update(id, { is_active: isActive });
 }
 
-export async function deleteJob(id: number): Promise<void> {
-  await getJobById(id);
+export async function remove(id: number): Promise<void> {
+  await getById(id);
   await jobRepo.remove(id);
 }
 
-export async function checkStudentEligibility(
-  jobId: number,
-  studentId: number,
-): Promise<EligibilityResult> {
-  const [job, student] = await Promise.all([
-    getJobById(jobId),
-    studentRepo.findById(studentId),
-  ]);
-
-  if (!student) {
-    throw new NotFoundError("Student", studentId);
-  }
-
-  const reasons: string[] = [];
-
-  if (student.profile_status !== "APPROVED") {
-    reasons.push(
-      `Student profile is ${student.profile_status}; only APPROVED profiles can apply.`,
-    );
-  }
-
-  if (!job.is_active) {
-    reasons.push("This job posting is currently closed/inactive.");
-  }
-
-  if (job.application_deadline) {
-    const deadline = new Date(job.application_deadline);
-    if (!isNaN(deadline.getTime())) {
-      deadline.setHours(23, 59, 59, 999);
-      if (new Date() > deadline) {
-        reasons.push(`Application deadline was ${job.application_deadline}.`);
-      }
-    }
-  }
-
-  if (job.preferred_courses && job.preferred_courses.length > 0) {
-    if (!job.preferred_courses.includes(student.course_name)) {
-      reasons.push(
-        `Job is restricted to [${job.preferred_courses.join(", ")}]. Student is in ${student.course_name}.`,
-      );
-    }
-  }
-
-  if (job.min_cgpa !== null && job.min_cgpa !== undefined) {
-    if (student.cgpa === null || student.cgpa === undefined) {
-      reasons.push(
-        `Job requires min CGPA of ${job.min_cgpa}, but student CGPA is not recorded.`,
-      );
-    } else if (student.cgpa < job.min_cgpa) {
-      reasons.push(
-        `Student CGPA (${student.cgpa}) is lower than minimum requirement (${job.min_cgpa}).`,
-      );
-    }
-  }
-
-  if (job.max_backlogs !== null && job.max_backlogs !== undefined) {
-    if (student.active_backlogs > job.max_backlogs) {
-      reasons.push(
-        `Student has ${student.active_backlogs} active backlogs, exceeding limit of ${job.max_backlogs}.`,
-      );
-    }
-  }
-
-  return {
-    eligible: reasons.length === 0,
-    reasons,
-  };
+function isPastDeadline(deadline: string | null): boolean {
+  if (!deadline) return false;
+  const end = new Date(deadline);
+  if (isNaN(end.getTime())) return false;
+  end.setHours(23, 59, 59, 999);
+  return new Date() > end;
 }
 
-export async function getEligibleJobsForStudent(
+function checkRules(
+  job: Job,
+  student: NonNullable<Awaited<ReturnType<typeof studentRepo.findById>>>,
+): string[] {
+  const reasons: string[] = [];
+  if (student.profile_status !== "APPROVED")
+    reasons.push("Student profile is not approved");
+  if (!job.is_active) reasons.push("This job is no longer active");
+  if (isPastDeadline(job.application_deadline))
+    reasons.push("Application deadline has passed");
+  if (job.preferred_courses && job.preferred_courses.length > 0) {
+    if (!job.preferred_courses.includes(student.course_name))
+      reasons.push(
+        `This job is only for ${job.preferred_courses.join(", ")} students`,
+      );
+  }
+  if (job.min_cgpa !== null && job.min_cgpa !== undefined) {
+    if (student.cgpa === null)
+      reasons.push(`This job needs minimum CGPA of ${job.min_cgpa}`);
+    else if (student.cgpa < job.min_cgpa)
+      reasons.push(`CGPA ${student.cgpa} is below required ${job.min_cgpa}`);
+  }
+  if (job.max_backlogs !== null && job.max_backlogs !== undefined) {
+    if (student.active_backlogs > job.max_backlogs)
+      reasons.push(
+        `Active backlogs exceed allowed limit of ${job.max_backlogs}`,
+      );
+  }
+  return reasons;
+}
+
+export async function checkEligibility(
+  jobId: number,
   studentId: number,
-  options: { limit?: number; offset?: number } = {},
+): Promise<Eligibility> {
+  const job = await getById(jobId);
+  const student = await studentRepo.findById(studentId);
+  if (!student) throw new NotFoundError("Student", studentId);
+  const reasons = checkRules(job, student);
+  return { eligible: reasons.length === 0, reasons };
+}
+
+export async function eligibleForStudent(
+  studentId: number,
+  page = 1,
+  limit = 20,
 ): Promise<Job[]> {
   const student = await studentRepo.findById(studentId);
-  if (!student) {
-    throw new NotFoundError("Student", studentId);
-  }
-
-  if (student.profile_status !== "APPROVED") {
-    return [];
-  }
-
-  const activeJobs = await jobRepo.findMany(
-    { isActive: true },
-    { limit: 1000 },
-  );
-
-  const eligibleJobs = activeJobs.filter((job) => {
-    if (job.application_deadline) {
-      const deadline = new Date(job.application_deadline);
-      if (!isNaN(deadline.getTime())) {
-        deadline.setHours(23, 59, 59, 999);
-        if (new Date() > deadline) return false;
-      }
-    }
-
-    if (job.preferred_courses && job.preferred_courses.length > 0) {
-      if (!job.preferred_courses.includes(student.course_name)) return false;
-    }
-
-    if (job.min_cgpa !== null && job.min_cgpa !== undefined) {
-      if (
-        student.cgpa === null ||
-        student.cgpa === undefined ||
-        student.cgpa < job.min_cgpa
-      ) {
-        return false;
-      }
-    }
-
-    if (job.max_backlogs !== null && job.max_backlogs !== undefined) {
-      if (student.active_backlogs > job.max_backlogs) {
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  const offset = options.offset ?? 0;
-  const limit = options.limit ?? 20;
-  return eligibleJobs.slice(offset, offset + limit);
+  if (!student) throw new NotFoundError("Student", studentId);
+  if (student.profile_status !== "APPROVED") return [];
+  const jobs = await jobRepo.findMany({ isActive: true }, 1, 200);
+  const ok = jobs.filter((job) => checkRules(job, student).length === 0);
+  const start = (page - 1) * limit;
+  return ok.slice(start, start + limit);
 }

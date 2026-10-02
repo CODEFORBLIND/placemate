@@ -1,11 +1,15 @@
 import * as studentRepo from "@/repositories/student.repository";
 import * as userRepo from "@/repositories/user.repository";
+import type {
+  Student,
+  StudentFilters,
+} from "@/repositories/student.repository";
 import type { Database } from "@/types/database";
 import {
   NotFoundError,
   ValidationError,
   ConflictError,
-  validateWithSchema,
+  validate,
 } from "./errors";
 import {
   registerProfileSchema,
@@ -17,83 +21,59 @@ import {
 } from "@/schemas/student.schema";
 
 export type { RegisterProfileInput, UpdateProfileInput, ReviewProfileInput };
+export type { Student };
 
-type Student = Database["public"]["Tables"]["students"]["Row"];
 type PcRole = Database["public"]["Enums"]["pc_role"];
 
-export async function getStudentById(id: number): Promise<Student> {
+export async function getById(id: number): Promise<Student> {
   const student = await studentRepo.findById(id);
-  if (!student) {
-    throw new NotFoundError("Student profile", id);
-  }
+  if (!student) throw new NotFoundError("Student", id);
   return student;
 }
 
-export async function getStudentByUserId(userId: number): Promise<Student> {
+export async function getByUserId(userId: number): Promise<Student | null> {
+  return studentRepo.findByUserId(userId);
+}
+
+export async function requireByUserId(userId: number): Promise<Student> {
   const student = await studentRepo.findByUserId(userId);
-  if (!student) {
-    throw new NotFoundError("Student profile for user", userId);
-  }
+  if (!student) throw new NotFoundError("Profile for user", userId);
   return student;
 }
 
-export async function getStudentByRollNo(
-  rollNo: string,
-): Promise<Student | null> {
-  if (!rollNo || rollNo.trim().length === 0) {
-    return null;
-  }
-  return await studentRepo.findByRollNo(rollNo.trim());
-}
-
-export async function listStudents(
-  filters: Parameters<typeof studentRepo.findMany>[0] = {},
-  options: Parameters<typeof studentRepo.findMany>[1] = {},
+export async function list(
+  filters: StudentFilters = {},
+  page = 1,
+  limit = 20,
 ): Promise<Student[]> {
-  return await studentRepo.findMany(filters, options);
+  return studentRepo.findMany(filters, page, limit);
 }
 
-export async function registerProfile(
+export async function createProfile(
+  userId: number,
   input: RegisterProfileInput,
 ): Promise<Student> {
-  const validated = validateWithSchema(registerProfileSchema, input);
-
-  const user = await userRepo.findById(validated.userId);
-  if (!user) {
-    throw new NotFoundError("User", validated.userId);
-  }
-
-  const existingProfile = await studentRepo.findByUserId(validated.userId);
-  if (existingProfile) {
-    throw new ConflictError(
-      `User ${validated.userId} already has an associated student profile`,
-    );
-  }
-
-  const cleanRollNo = validated.rollNo.trim();
-  const existingRoll = await studentRepo.findByRollNo(cleanRollNo);
-  if (existingRoll) {
-    throw new ConflictError(
-      `Student with roll number '${cleanRollNo}' already exists`,
-    );
-  }
-
-  return await studentRepo.create({
-    user_id: validated.userId,
-    full_name: validated.fullName.trim(),
-    roll_no: cleanRollNo,
-    contact_no: validated.contactNo ?? null,
-    course_name: validated.courseName,
-    enrollment_year: validated.enrollmentYear,
-    graduation_year: validated.graduationYear,
-    cgpa: validated.cgpa ?? null,
-    backlogs: validated.backlogs ?? 0,
-    active_backlogs: validated.activeBacklogs ?? 0,
-    preferred_roles: validated.preferredRoles ?? null,
-    resume_storage_path: validated.resumeStoragePath ?? null,
+  const data = validate(registerProfileSchema, input);
+  const user = await userRepo.findById(userId);
+  if (!user) throw new NotFoundError("User", userId);
+  const existing = await studentRepo.findByUserId(userId);
+  if (existing) throw new ConflictError("You already have a profile");
+  const rollTaken = await studentRepo.findByRollNo(data.rollNo);
+  if (rollTaken) throw new ConflictError("This roll number is already used");
+  return studentRepo.create({
+    user_id: userId,
+    full_name: data.fullName,
+    roll_no: data.rollNo,
+    contact_no: data.contactNo ?? null,
+    course_name: data.courseName,
+    enrollment_year: data.enrollmentYear,
+    graduation_year: data.graduationYear,
+    cgpa: data.cgpa ?? null,
+    backlogs: data.backlogs,
+    active_backlogs: data.activeBacklogs,
+    preferred_roles: data.preferredRoles ?? null,
+    resume_storage_path: data.resumeStoragePath ?? null,
     profile_status: "DRAFT",
-    profile_remark: null,
-    pc_role: null,
   });
 }
 
@@ -101,152 +81,93 @@ export async function updateProfile(
   id: number,
   input: UpdateProfileInput,
 ): Promise<Student> {
-  const current = await getStudentById(id);
-  const validated = validateWithSchema(updateProfileSchema, input);
+  const current = await getById(id);
+  const data = validate(updateProfileSchema, input);
 
-  if (validated.rollNo !== undefined) {
-    const cleanRollNo = validated.rollNo.trim();
-    if (cleanRollNo !== current.roll_no) {
-      const existing = await studentRepo.findByRollNo(cleanRollNo);
-      if (existing && existing.id !== id) {
-        throw new ConflictError(
-          `Roll number '${cleanRollNo}' is already registered to another student`,
-        );
-      }
-    }
+  if (data.rollNo !== undefined && data.rollNo !== current.roll_no) {
+    const taken = await studentRepo.findByRollNo(data.rollNo);
+    if (taken && taken.id !== id)
+      throw new ConflictError("This roll number is already used");
   }
 
-  // Cross-field checks combining current values with updated values
-  const enrollmentYear = validated.enrollmentYear ?? current.enrollment_year;
-  const graduationYear = validated.graduationYear ?? current.graduation_year;
-  if (graduationYear < enrollmentYear) {
+  const enrollmentYear = data.enrollmentYear ?? current.enrollment_year;
+  const graduationYear = data.graduationYear ?? current.graduation_year;
+  if (graduationYear < enrollmentYear)
     throw new ValidationError(
       "Graduation year cannot be earlier than enrollment year",
     );
-  }
 
-  const backlogs = validated.backlogs ?? current.backlogs;
-  const activeBacklogs = validated.activeBacklogs ?? current.active_backlogs;
-  if (activeBacklogs > backlogs) {
+  const backlogs = data.backlogs ?? current.backlogs;
+  const activeBacklogs = data.activeBacklogs ?? current.active_backlogs;
+  if (activeBacklogs > backlogs)
     throw new ValidationError("Active backlogs cannot exceed total backlogs");
-  }
 
-  const updateData: Parameters<typeof studentRepo.update>[1] = {};
-
-  if (validated.fullName !== undefined)
-    updateData.full_name = validated.fullName.trim();
-  if (validated.rollNo !== undefined)
-    updateData.roll_no = validated.rollNo.trim();
-  if (validated.contactNo !== undefined)
-    updateData.contact_no = validated.contactNo;
-  if (validated.courseName !== undefined)
-    updateData.course_name = validated.courseName;
-  if (validated.enrollmentYear !== undefined)
-    updateData.enrollment_year = validated.enrollmentYear;
-  if (validated.graduationYear !== undefined)
-    updateData.graduation_year = validated.graduationYear;
-  if (validated.cgpa !== undefined) updateData.cgpa = validated.cgpa;
-  if (validated.backlogs !== undefined) updateData.backlogs = validated.backlogs;
-  if (validated.activeBacklogs !== undefined)
-    updateData.active_backlogs = validated.activeBacklogs;
-  if (validated.preferredRoles !== undefined)
-    updateData.preferred_roles = validated.preferredRoles;
-  if (validated.resumeStoragePath !== undefined)
-    updateData.resume_storage_path = validated.resumeStoragePath;
-
-  return await studentRepo.update(id, updateData);
+  return studentRepo.update(id, {
+    full_name: data.fullName,
+    roll_no: data.rollNo,
+    contact_no: data.contactNo,
+    course_name: data.courseName,
+    enrollment_year: data.enrollmentYear,
+    graduation_year: data.graduationYear,
+    cgpa: data.cgpa,
+    backlogs: data.backlogs,
+    active_backlogs: data.activeBacklogs,
+    preferred_roles: data.preferredRoles,
+    resume_storage_path: data.resumeStoragePath,
+  });
 }
 
-export async function submitForApproval(studentId: number): Promise<Student> {
-  const student = await getStudentById(studentId);
-
-  if (student.profile_status === "APPROVED") {
+export async function submitForApproval(id: number): Promise<Student> {
+  const student = await getById(id);
+  if (student.profile_status === "APPROVED")
     throw new ValidationError("Profile is already approved");
-  }
-
-  if (student.profile_status === "PENDING_APPROVAL") {
-    throw new ValidationError("Profile is already pending approval");
-  }
-
-  if (!student.resume_storage_path) {
-    throw new ValidationError(
-      "Please upload a resume before submitting your profile for approval",
-    );
-  }
-
-  if (student.cgpa === null || student.cgpa === undefined) {
-    throw new ValidationError(
-      "Please enter your CGPA before submitting for approval",
-    );
-  }
-
-  return await studentRepo.update(studentId, {
+  if (student.profile_status === "PENDING_APPROVAL")
+    throw new ValidationError("Profile is already waiting for approval");
+  if (!student.resume_storage_path)
+    throw new ValidationError("Upload your resume before submitting");
+  if (student.cgpa === null)
+    throw new ValidationError("Enter your CGPA before submitting");
+  return studentRepo.update(id, {
     profile_status: "PENDING_APPROVAL",
     profile_remark: null,
   });
 }
 
 export async function reviewProfile(
-  studentId: number,
-  decision: "APPROVED" | "DRAFT",
-  remark?: string,
+  id: number,
+  input: ReviewProfileInput,
 ): Promise<Student> {
-  const validated = validateWithSchema(reviewProfileSchema, {
-    decision,
-    remark,
-  });
-  const student = await getStudentById(studentId);
-
-  if (student.profile_status !== "PENDING_APPROVAL") {
+  const data = validate(reviewProfileSchema, input);
+  const student = await getById(id);
+  if (student.profile_status !== "PENDING_APPROVAL")
     throw new ValidationError(
-      `Cannot review profile in '${student.profile_status}' status. Must be PENDING_APPROVAL.`,
+      "Only profiles waiting for approval can be reviewed",
     );
-  }
-
-  return await studentRepo.update(studentId, {
-    profile_status: validated.decision,
-    profile_remark:
-      validated.remark ??
-      (validated.decision === "APPROVED"
-        ? "Profile verified and approved"
-        : "Changes requested"),
+  return studentRepo.update(id, {
+    profile_status: data.decision,
+    profile_remark: data.remark ?? null,
   });
 }
 
-export async function assignPcRole(
-  studentId: number,
+export async function setPcRole(
+  id: number,
   role: PcRole | null,
 ): Promise<Student> {
-  await getStudentById(studentId);
-  return await studentRepo.update(studentId, {
-    pc_role: role,
-  });
+  await getById(id);
+  return studentRepo.update(id, { pc_role: role });
 }
 
-export async function updateResume(
-  studentId: number,
+export async function setResume(
+  id: number,
   resumeStoragePath: string,
 ): Promise<Student> {
-  if (!resumeStoragePath || resumeStoragePath.trim().length === 0) {
-    throw new ValidationError("Resume storage path cannot be empty");
-  }
-  await getStudentById(studentId);
-  return await studentRepo.update(studentId, {
-    resume_storage_path: resumeStoragePath.trim(),
-  });
+  const path = resumeStoragePath.trim();
+  if (!path) throw new ValidationError("Resume path cannot be empty");
+  await getById(id);
+  return studentRepo.update(id, { resume_storage_path: path });
 }
 
-export async function updateProfileEmbedding(
-  studentId: number,
-  embedding: string,
-): Promise<Student> {
-  await getStudentById(studentId);
-  return await studentRepo.update(studentId, {
-    profile_embedding: embedding,
-  });
-}
-
-export async function deleteStudent(studentId: number): Promise<void> {
-  await getStudentById(studentId);
-  await studentRepo.remove(studentId);
+export async function remove(id: number): Promise<void> {
+  await getById(id);
+  await studentRepo.remove(id);
 }
