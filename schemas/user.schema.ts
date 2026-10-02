@@ -1,23 +1,19 @@
 import { z } from "zod";
 
 export const createUserSchema = z.object({
-  email: z.string().trim().email({ message: "Invalid email address format" }),
-  passwordHash: z
+  email: z.string().trim().toLowerCase().email("Invalid email address"),
+  password: z
     .string()
-    .trim()
-    .min(1, { message: "Password hash is required" }),
+    .min(6, "Password must be at least 6 characters")
+    .max(72, "Password must be at most 72 characters"),
 });
 
 export const updateUserSchema = z.object({
   email: z
     .string()
     .trim()
-    .email({ message: "Invalid email address format" })
-    .optional(),
-  passwordHash: z
-    .string()
-    .trim()
-    .min(1, { message: "Password hash cannot be empty" })
+    .toLowerCase()
+    .email("Invalid email address")
     .optional(),
   isActive: z.boolean().optional(),
 });

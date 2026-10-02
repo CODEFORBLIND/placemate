@@ -1,19 +1,16 @@
 import { z } from "zod";
 
-export const applicationStatusEnum = z.enum(
-  ["APPLIED", "SHORTLISTED", "INTERVIEWING", "OFFERED", "REJECTED"],
-  {
-    message:
-      "Status must be one of APPLIED, SHORTLISTED, INTERVIEWING, OFFERED, or REJECTED",
-  },
-);
+export const applicationStatusEnum = z.enum([
+  "APPLIED",
+  "SHORTLISTED",
+  "INTERVIEWING",
+  "OFFERED",
+  "REJECTED",
+]);
 
 export const applySchema = z.object({
-  studentId: z
-    .number()
-    .int()
-    .positive({ message: "Valid student ID is required" }),
-  jobId: z.number().int().positive({ message: "Valid job ID is required" }),
+  studentId: z.number().int().positive("Valid student ID is required"),
+  jobId: z.number().int().positive("Valid job ID is required"),
 });
 
 export const updateApplicationStatusSchema = z.object({
