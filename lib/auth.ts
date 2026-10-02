@@ -2,15 +2,14 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "dev-secret-please-change-in-production";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
-const COOKIE_NAME = "placemate_token";
+const SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
+const COOKIE = "placemate_token";
+const SEVEN_DAYS = 60 * 60 * 24 * 7;
 
-export interface JWTPayload {
+export type TokenData = {
   userId: number;
   email: string;
-}
+};
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);
@@ -24,53 +23,44 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  } as jwt.SignOptions);
+export function signToken(data: TokenData): string {
+  return jwt.sign(data, SECRET, { expiresIn: "7d" });
 }
 
-export function verifyToken(token: string): JWTPayload {
-  return jwt.verify(token, JWT_SECRET) as JWTPayload;
-}
-
-export function getTokenFromRequest(request: NextRequest): string | null {
-  const cookieToken = request.cookies.get(COOKIE_NAME)?.value;
-  if (cookieToken) return cookieToken;
-  const header = request.headers.get("authorization");
-  if (header) {
-    const parts = header.trim().split(/\s+/);
-    if (parts.length === 2 && parts[0].toLowerCase() === "bearer") {
-      return parts[1].trim();
-    }
+export function readToken(token: string): TokenData | null {
+  try {
+    const data = jwt.verify(token, SECRET) as TokenData;
+    if (typeof data.userId !== "number" || typeof data.email !== "string")
+      return null;
+    return { userId: data.userId, email: data.email };
+  } catch {
+    return null;
   }
+}
+
+export function tokenFromRequest(request: NextRequest): string | null {
+  const fromCookie = request.cookies.get(COOKIE)?.value;
+  if (fromCookie) return fromCookie;
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const parts = header.split(" ");
+  if (parts.length === 2 && parts[0].toLowerCase() === "bearer")
+    return parts[1];
   return null;
 }
 
-function getCookieMaxAge(): number {
-  const expiresIn = JWT_EXPIRES_IN;
-  const match = expiresIn.match(/^(\d+)([smhd])$/);
-  if (match) {
-    const val = parseInt(match[1], 10);
-    const unit = match[2];
-    const mult: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
-    return val * (mult[unit] || 86400);
-  }
-  return 60 * 60 * 24 * 7;
-}
-
-export function setAuthCookie(response: NextResponse, token: string): void {
-  response.cookies.set(COOKIE_NAME, token, {
+export function setAuthCookie(response: NextResponse, token: string) {
+  response.cookies.set(COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: getCookieMaxAge(),
+    maxAge: SEVEN_DAYS,
   });
 }
 
-export function clearAuthCookie(response: NextResponse): void {
-  response.cookies.set(COOKIE_NAME, "", {
+export function clearAuthCookie(response: NextResponse) {
+  response.cookies.set(COOKIE, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -79,16 +69,4 @@ export function clearAuthCookie(response: NextResponse): void {
   });
 }
 
-export function getAuthUser(request: NextRequest): JWTPayload {
-  const token = getTokenFromRequest(request);
-  if (!token) {
-    throw new Error("Unauthorized");
-  }
-  try {
-    return verifyToken(token);
-  } catch {
-    throw new Error("Unauthorized");
-  }
-}
-
-export const AUTH_COOKIE_NAME = COOKIE_NAME;
+export const AUTH_COOKIE = COOKIE;
