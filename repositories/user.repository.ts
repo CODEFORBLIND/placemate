@@ -32,10 +32,7 @@ export async function findByEmail(email: string): Promise<User | null> {
   return data;
 }
 
-export async function findMany(
-  page = 1,
-  limit = 20,
-): Promise<User[]> {
+export async function findMany(page = 1, limit = 20): Promise<User[]> {
   const { from, to } = toRange(page, limit);
   const { data, error } = await supabase
     .from("users")
