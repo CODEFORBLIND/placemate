@@ -1,26 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleError } from "@/lib/api-helpers";
-import { validateWithSchema } from "@/services/errors";
-import { registerSchema } from "@/schemas/auth.schema";
-import * as userService from "@/services/user.service";
-import { hashPassword } from "@/lib/auth";
+import { userService } from "@/services";
+import { handleError, ok, created, getPage } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const email = request.nextUrl.searchParams.get("email");
+    const session = await getSession(request);
+    requirePc(session);
+    const email = request.nextUrl.searchParams.get("email")?.trim();
     if (email) {
-      const user = await userService.getUserByEmail(email);
+      const user = await userService.getByEmail(email);
       if (!user)
         return NextResponse.json({ error: "User not found" }, { status: 404 });
-      return NextResponse.json(
-        { data: { id: user.id, email: user.email, is_active: user.is_active } },
-        { status: 200 },
-      );
+      return ok(userService.toPublic(user));
     }
-    return NextResponse.json(
-      { error: "Provide ?email= to fetch user or use /api/users/[id]" },
-      { status: 400 },
-    );
+    const { page, limit } = getPage(request);
+    const users = await userService.list(page, limit);
+    return ok(users.map(userService.toPublic));
   } catch (error) {
     return handleError(error);
   }
@@ -28,35 +24,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    let email: string;
-    let hash: string;
-    if (body.password) {
-      const validated = validateWithSchema(registerSchema, body);
-      email = validated.email;
-      hash = await hashPassword(validated.password);
-    } else {
-      const { createUserSchema } = await import("@/schemas/user.schema");
-      const validated = validateWithSchema(createUserSchema, body);
-      email = validated.email;
-      if (
-        validated.passwordHash.startsWith("$2a$") ||
-        validated.passwordHash.startsWith("$2b$")
-      ) {
-        hash = validated.passwordHash;
-      } else {
-        hash = await hashPassword(validated.passwordHash);
-      }
-    }
-
-    const user = await userService.createUser({ email, passwordHash: hash });
-    return NextResponse.json(
-      {
-        message: "User created",
-        data: { id: user.id, email: user.email, is_active: user.is_active },
-      },
-      { status: 201 },
-    );
+    const user = await userService.create(body);
+    return created(userService.toPublic(user), "User created");
   } catch (error) {
     return handleError(error);
   }

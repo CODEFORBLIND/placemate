@@ -1,31 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as studentService from "@/services/student.service";
-import { ValidationError } from "@/services/errors";
+import { NextRequest } from "next/server";
+import { studentService } from "@/services";
+import { validate } from "@/services/errors";
+import { pcRoleSchema } from "@/schemas/student.schema";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const studentId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const { role } = body;
-    if (
-      role !== null &&
-      role !== undefined &&
-      !["MEMBER", "COORDINATOR"].includes(role)
-    ) {
-      throw new ValidationError(
-        "Invalid role. Allowed: MEMBER, COORDINATOR, null",
-      );
-    }
-    const student = await studentService.assignPcRole(studentId, role ?? null);
-    return NextResponse.json(
-      { message: "PC role updated", data: student },
-      { status: 200 },
+    const data = validate(pcRoleSchema, body);
+    const student = await studentService.setPcRole(
+      await routeId(params),
+      data.role,
     );
+    return ok(student, "Role updated");
   } catch (error) {
     return handleError(error);
   }

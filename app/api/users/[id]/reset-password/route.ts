@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { userService } from "@/services";
+import { authService } from "@/services";
 import { handleError, ok, routeId } from "@/lib/api-helpers";
 import { getSession, requirePc } from "@/lib/session";
 
@@ -10,8 +10,12 @@ export async function POST(
   try {
     const session = await getSession(request);
     requirePc(session);
-    const user = await userService.setActive(await routeId(params), true);
-    return ok(userService.toPublic(user), "User activated");
+    const body = await request.json();
+    const user = await authService.resetUserPassword(
+      await routeId(params),
+      body,
+    );
+    return ok(user, "Password reset");
   } catch (error) {
     return handleError(error);
   }

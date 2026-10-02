@@ -1,22 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as userService from "@/services/user.service";
+import { NextRequest } from "next/server";
+import { userService } from "@/services";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const userId = parseId(id);
-    const user = await userService.deactivateUser(userId);
-    return NextResponse.json(
-      {
-        message: "User deactivated",
-        data: { id: user.id, is_active: user.is_active },
-      },
-      { status: 200 },
-    );
+    const session = await getSession(request);
+    requirePc(session);
+    const user = await userService.setActive(await routeId(params), false);
+    return ok(userService.toPublic(user), "User deactivated");
   } catch (error) {
     return handleError(error);
   }

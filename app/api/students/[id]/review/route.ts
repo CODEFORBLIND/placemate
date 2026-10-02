@@ -1,25 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as studentService from "@/services/student.service";
+import { NextRequest } from "next/server";
+import { studentService } from "@/services";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const studentId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const { decision, remark } = body;
     const student = await studentService.reviewProfile(
-      studentId,
-      decision,
-      remark,
+      await routeId(params),
+      body,
     );
-    return NextResponse.json(
-      { message: `Profile ${decision}`, data: student },
-      { status: 200 },
-    );
+    return ok(student, "Profile reviewed");
   } catch (error) {
     return handleError(error);
   }

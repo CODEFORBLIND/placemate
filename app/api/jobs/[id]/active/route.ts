@@ -1,27 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as jobService from "@/services/job.service";
+import { NextRequest } from "next/server";
+import { jobService } from "@/services";
+import { ValidationError } from "@/services/errors";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const jobId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const { isActive } = body;
-    if (typeof isActive !== "boolean") {
-      return NextResponse.json(
-        { error: "isActive must be boolean" },
-        { status: 400 },
-      );
-    }
-    const job = await jobService.setJobActiveStatus(jobId, isActive);
-    return NextResponse.json(
-      { message: "Job active status updated", data: job },
-      { status: 200 },
+    if (typeof body.isActive !== "boolean")
+      throw new ValidationError("isActive must be true or false");
+    const job = await jobService.setActive(
+      await routeId(params),
+      body.isActive,
     );
+    return ok(job, "Job status updated");
   } catch (error) {
     return handleError(error);
   }

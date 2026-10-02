@@ -1,33 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { validateWithSchema } from "@/services/errors";
-import { registerSchema } from "@/schemas/auth.schema";
-import * as userService from "@/services/user.service";
-import { hashPassword, signToken, setAuthCookie } from "@/lib/auth";
-import { handleError } from "@/lib/api-helpers";
+import { NextRequest } from "next/server";
+import { authService } from "@/services";
+import { handleError, created } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const validated = validateWithSchema(registerSchema, body);
-
-    const hashed = await hashPassword(validated.password);
-
-    const user = await userService.createUser({
-      email: validated.email,
-      passwordHash: hashed,
-    });
-
-    const token = signToken({ userId: user.id, email: user.email });
-
-    const response = NextResponse.json(
-      {
-        message: "User registered successfully",
-        data: { id: user.id, email: user.email, is_active: user.is_active },
-      },
-      { status: 201 },
+    const user = await authService.register(body);
+    return created(
+      user,
+      "Account created, share the credentials with the user",
     );
-    setAuthCookie(response, token);
-    return response;
   } catch (error) {
     return handleError(error);
   }

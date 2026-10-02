@@ -1,30 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as applicationService from "@/services/application.service";
+import { NextRequest } from "next/server";
+import { applicationService } from "@/services";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, ownStudentId } from "@/lib/session";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const appId = parseId(id);
-    const body = await request.json();
-    const { studentId } = body;
-    if (studentId === undefined || studentId === null)
-      return NextResponse.json(
-        { error: "studentId required" },
-        { status: 400 },
-      );
-    const parsedStudentId = parseId(String(studentId));
-    const application = await applicationService.withdrawApplication(
-      appId,
-      parsedStudentId,
+    const session = await getSession(request);
+    const application = await applicationService.withdraw(
+      await routeId(params),
+      ownStudentId(session),
     );
-    return NextResponse.json(
-      { message: "Application withdrawn", data: application },
-      { status: 200 },
-    );
+    return ok(application, "Application withdrawn");
   } catch (error) {
     return handleError(error);
   }

@@ -1,16 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as jobService from "@/services/job.service";
+import { NextRequest } from "next/server";
+import { jobService } from "@/services";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc, requireApproved } from "@/lib/session";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const jobId = parseId(id);
-    const job = await jobService.getJobById(jobId);
-    return NextResponse.json({ data: job }, { status: 200 });
+    const session = await getSession(request);
+    requireApproved(session);
+    return ok(await jobService.getById(await routeId(params)));
   } catch (error) {
     return handleError(error);
   }
@@ -21,14 +21,11 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const jobId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const job = await jobService.updateJob(jobId, body);
-    return NextResponse.json(
-      { message: "Job updated", data: job },
-      { status: 200 },
-    );
+    const job = await jobService.update(await routeId(params), body);
+    return ok(job, "Job updated");
   } catch (error) {
     return handleError(error);
   }
@@ -39,10 +36,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const jobId = parseId(id);
-    await jobService.deleteJob(jobId);
-    return NextResponse.json({ message: "Job deleted" }, { status: 200 });
+    const session = await getSession(request);
+    requirePc(session);
+    await jobService.remove(await routeId(params));
+    return ok(null, "Job deleted");
   } catch (error) {
     return handleError(error);
   }

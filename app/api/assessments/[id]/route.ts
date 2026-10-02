@@ -1,16 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as assessmentService from "@/services/assessment.service";
+import { NextRequest } from "next/server";
+import { assessmentService } from "@/services";
+import { ForbiddenError } from "@/services/errors";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const assessmentId = parseId(id);
-    const assessment = await assessmentService.getAssessmentById(assessmentId);
-    return NextResponse.json({ data: assessment }, { status: 200 });
+    const session = await getSession(request);
+    const assessment = await assessmentService.getById(await routeId(params));
+    if (!session.isPc && session.student?.id !== assessment.student_id)
+      throw new ForbiddenError("This assessment is not yours");
+    return ok(assessment);
   } catch (error) {
     return handleError(error);
   }
@@ -21,17 +24,28 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const assessmentId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const assessment = await assessmentService.updateAssessment(
-      assessmentId,
+    const assessment = await assessmentService.update(
+      await routeId(params),
       body,
     );
-    return NextResponse.json(
-      { message: "Assessment updated", data: assessment },
-      { status: 200 },
-    );
+    return ok(assessment, "Assessment updated");
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const session = await getSession(request);
+    requirePc(session);
+    await assessmentService.remove(await routeId(params));
+    return ok(null, "Assessment deleted");
   } catch (error) {
     return handleError(error);
   }

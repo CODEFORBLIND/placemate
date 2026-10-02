@@ -1,89 +1,54 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { applicationService } from "@/services";
+import { ValidationError } from "@/services/errors";
 import {
   handleError,
-  parsePagination,
-  buildPaginatedResponse,
-  parseId,
-  parseSortParams,
+  ok,
+  created,
+  getPage,
+  getNumber,
+  getEnum,
 } from "@/lib/api-helpers";
-import * as applicationService from "@/services/application.service";
-import { ValidationError } from "@/services/errors";
+import { getSession, requireApproved, ownStudentId } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const url = request.nextUrl;
-    const { page, limit } = parsePagination(request);
-    const studentIdParam = url.searchParams.get("studentId");
-    const jobIdParam = url.searchParams.get("jobId");
-    const status = url.searchParams.get("status");
-    if (
-      status &&
-      ![
-        "APPLIED",
-        "SHORTLISTED",
-        "INTERVIEWING",
-        "OFFERED",
-        "REJECTED",
-      ].includes(status)
-    ) {
-      throw new ValidationError("Invalid status");
-    }
-    const { sortBy, ascending } = parseSortParams(
-      request,
-      ["applied_on", "created_at"],
-      "applied_on",
-    );
+    const session = await getSession(request);
+    const { page, limit } = getPage(request);
+    const status = getEnum(request, "status", [
+      "APPLIED",
+      "SHORTLISTED",
+      "INTERVIEWING",
+      "OFFERED",
+      "REJECTED",
+    ]);
 
-    if (studentIdParam && jobIdParam) {
-      throw new ValidationError(
-        "Provide either ?studentId= or ?jobId=, not both",
-      );
-    }
-
-    if (studentIdParam) {
-      const studentId = parseId(studentIdParam);
-      const data = await applicationService.getApplicationsByStudent(
-        studentId,
-        {
-          page,
-          limit,
-          sortBy: sortBy as "applied_on" | "created_at",
-          ascending,
-          status:
-            (status as
-              | "APPLIED"
-              | "SHORTLISTED"
-              | "INTERVIEWING"
-              | "OFFERED"
-              | "REJECTED") || undefined,
-        },
-      );
-      const paginated = buildPaginatedResponse(request, data, { page, limit });
-      return NextResponse.json(paginated, { status: 200 });
+    if (session.isPc) {
+      const studentId = getNumber(request, "studentId");
+      const jobId = getNumber(request, "jobId");
+      if (studentId !== undefined)
+        return ok(
+          await applicationService.listByStudent(
+            studentId,
+            status,
+            page,
+            limit,
+          ),
+        );
+      if (jobId !== undefined)
+        return ok(
+          await applicationService.listByJob(jobId, status, page, limit),
+        );
+      throw new ValidationError("Provide ?studentId= or ?jobId=");
     }
 
-    if (jobIdParam) {
-      const jobId = parseId(jobIdParam);
-      const data = await applicationService.getApplicationsByJob(jobId, {
+    return ok(
+      await applicationService.listByStudent(
+        ownStudentId(session),
+        status,
         page,
         limit,
-        sortBy: sortBy as "applied_on" | "created_at",
-        ascending,
-        status:
-          (status as
-            | "APPLIED"
-            | "SHORTLISTED"
-            | "INTERVIEWING"
-            | "OFFERED"
-            | "REJECTED") || undefined,
-      });
-      const paginated = buildPaginatedResponse(request, data, { page, limit });
-      return NextResponse.json(paginated, { status: 200 });
-    }
-
-    return NextResponse.json(
-      { error: "Provide ?studentId= or ?jobId= query param" },
-      { status: 400 },
+      ),
     );
   } catch (error) {
     return handleError(error);
@@ -92,13 +57,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSession(request);
+    requireApproved(session);
     const body = await request.json();
-    const { studentId, jobId } = body;
-    const application = await applicationService.apply(studentId, jobId);
-    return NextResponse.json(
-      { message: "Application created", data: application },
-      { status: 201 },
+    if (typeof body.jobId !== "number")
+      throw new ValidationError("jobId is required");
+    const application = await applicationService.apply(
+      ownStudentId(session),
+      body.jobId,
     );
+    return created(application, "Application submitted");
   } catch (error) {
     return handleError(error);
   }

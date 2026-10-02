@@ -1,22 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError } from "@/lib/api-helpers";
-import * as assessmentService from "@/services/assessment.service";
+import { NextRequest } from "next/server";
+import { assessmentService } from "@/services";
+import { handleError, ok, getNumber } from "@/lib/api-helpers";
+import { getSession, requireStudentAccess, ownStudentId } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const studentIdParam = request.nextUrl.searchParams.get("studentId");
-    if (!studentIdParam) {
-      return NextResponse.json(
-        { error: "studentId query param required" },
-        { status: 400 },
-      );
-    }
-    const studentId = parseInt(studentIdParam, 10);
-    if (isNaN(studentId) || studentId <= 0)
-      return NextResponse.json({ error: "Invalid studentId" }, { status: 400 });
-    const summary =
-      await assessmentService.getStudentPerformanceSummary(studentId);
-    return NextResponse.json({ data: summary }, { status: 200 });
+    const session = await getSession(request);
+    const studentId = getNumber(request, "studentId") ?? ownStudentId(session);
+    requireStudentAccess(session, studentId);
+    return ok(await assessmentService.performance(studentId));
   } catch (error) {
     return handleError(error);
   }

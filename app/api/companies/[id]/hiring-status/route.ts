@@ -1,27 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as companyService from "@/services/company.service";
+import { NextRequest } from "next/server";
+import { companyService } from "@/services";
+import { ValidationError } from "@/services/errors";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const companyId = parseId(id);
+    const session = await getSession(request);
+    requirePc(session);
     const body = await request.json();
-    const { isHiring } = body;
-    if (typeof isHiring !== "boolean") {
-      return NextResponse.json(
-        { error: "isHiring must be boolean" },
-        { status: 400 },
-      );
-    }
-    const company = await companyService.setHiringStatus(companyId, isHiring);
-    return NextResponse.json(
-      { message: "Hiring status updated", data: company },
-      { status: 200 },
+    if (typeof body.isHiring !== "boolean")
+      throw new ValidationError("isHiring must be true or false");
+    const company = await companyService.setHiring(
+      await routeId(params),
+      body.isHiring,
     );
+    return ok(company, "Hiring status updated");
   } catch (error) {
     return handleError(error);
   }

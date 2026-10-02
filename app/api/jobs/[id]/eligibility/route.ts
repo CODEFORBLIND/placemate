@@ -1,24 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as jobService from "@/services/job.service";
+import { NextRequest } from "next/server";
+import { jobService } from "@/services";
+import { handleError, ok, routeId, getNumber } from "@/lib/api-helpers";
+import {
+  getSession,
+  requireApproved,
+  requireStudentAccess,
+  ownStudentId,
+} from "@/lib/session";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const jobId = parseId(id);
-    const studentIdParam = request.nextUrl.searchParams.get("studentId");
-    if (!studentIdParam) {
-      return NextResponse.json(
-        { error: "studentId query param required" },
-        { status: 400 },
-      );
-    }
-    const studentId = parseId(studentIdParam);
-    const result = await jobService.checkStudentEligibility(jobId, studentId);
-    return NextResponse.json({ data: result }, { status: 200 });
+    const session = await getSession(request);
+    requireApproved(session);
+    const studentId = getNumber(request, "studentId") ?? ownStudentId(session);
+    requireStudentAccess(session, studentId);
+    const result = await jobService.checkEligibility(
+      await routeId(params),
+      studentId,
+    );
+    return ok(result);
   } catch (error) {
     return handleError(error);
   }

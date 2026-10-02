@@ -1,68 +1,37 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { studentService } from "@/services";
 import {
   handleError,
-  parsePagination,
-  buildPaginatedResponse,
-  parseSortParams,
+  ok,
+  created,
+  getPage,
+  getText,
+  getNumber,
+  getEnum,
 } from "@/lib/api-helpers";
-import * as studentService from "@/services/student.service";
-import { ValidationError } from "@/services/errors";
+import { getSession, requirePc } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   try {
-    const url = request.nextUrl;
-    const { page, limit } = parsePagination(request);
-
-    const filters: Record<string, unknown> = {};
-    const courseName = url.searchParams.get("courseName");
-    if (courseName) {
-      if (!["MCA", "MSC"].includes(courseName))
-        throw new ValidationError("Invalid courseName. Allowed: MCA, MSC");
-      filters.courseName = courseName;
-    }
-    const profileStatus = url.searchParams.get("profileStatus");
-    if (profileStatus) {
-      if (!["DRAFT", "PENDING_APPROVAL", "APPROVED"].includes(profileStatus))
-        throw new ValidationError("Invalid profileStatus");
-      filters.profileStatus = profileStatus;
-    }
-    const graduationYear = url.searchParams.get("graduationYear");
-    if (graduationYear) {
-      if (!/^\d+$/.test(graduationYear.trim()))
-        throw new ValidationError("Invalid graduationYear");
-      const gy = Number(graduationYear);
-      if (gy < 2000 || gy > 2100)
-        throw new ValidationError("graduationYear out of range");
-      filters.graduationYear = gy;
-    }
-    const pcRole = url.searchParams.get("pcRole");
-    if (pcRole) {
-      if (!["MEMBER", "COORDINATOR"].includes(pcRole))
-        throw new ValidationError("Invalid pcRole");
-      filters.pcRole = pcRole;
-    }
-    const search = url.searchParams.get("search");
-    if (search && search.trim()) filters.search = search.trim();
-
-    const { sortBy, ascending } = parseSortParams(
-      request,
-      ["created_at", "full_name", "cgpa", "graduation_year"],
-      "created_at",
-    );
-
-    const data = await studentService.listStudents(
-      filters as Parameters<typeof studentService.listStudents>[0],
+    const session = await getSession(request);
+    requirePc(session);
+    const { page, limit } = getPage(request);
+    const students = await studentService.list(
       {
-        page,
-        limit,
-        sortBy: sortBy as
-          "created_at" | "full_name" | "cgpa" | "graduation_year",
-        ascending,
+        courseName: getEnum(request, "courseName", ["MCA", "MSC"]),
+        profileStatus: getEnum(request, "profileStatus", [
+          "DRAFT",
+          "PENDING_APPROVAL",
+          "APPROVED",
+        ]),
+        graduationYear: getNumber(request, "graduationYear"),
+        pcRole: getEnum(request, "pcRole", ["MEMBER", "COORDINATOR"]),
+        search: getText(request, "search"),
       },
+      page,
+      limit,
     );
-
-    const paginated = buildPaginatedResponse(request, data, { page, limit });
-    return NextResponse.json(paginated, { status: 200 });
+    return ok(students);
   } catch (error) {
     return handleError(error);
   }
@@ -70,11 +39,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSession(request);
     const body = await request.json();
-    const student = await studentService.registerProfile(body);
-    return NextResponse.json(
-      { message: "Student profile created", data: student },
-      { status: 201 },
+    const student = await studentService.createProfile(session.user.id, body);
+    return created(
+      student,
+      "Profile created, complete it and submit for approval",
     );
   } catch (error) {
     return handleError(error);

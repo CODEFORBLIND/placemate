@@ -1,30 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleError, parseId } from "@/lib/api-helpers";
-import * as studentService from "@/services/student.service";
+import { NextRequest } from "next/server";
+import { studentService } from "@/services";
+import { ValidationError } from "@/services/errors";
+import { handleError, ok, routeId } from "@/lib/api-helpers";
+import { getSession, requireStudentAccess } from "@/lib/session";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { id } = await params;
-    const studentId = parseId(id);
+    const session = await getSession(request);
+    const id = await routeId(params);
+    requireStudentAccess(session, id);
     const body = await request.json();
-    const { resumeStoragePath } = body;
-    if (typeof resumeStoragePath !== "string") {
-      return NextResponse.json(
-        { error: "resumeStoragePath must be a string" },
-        { status: 400 },
-      );
-    }
-    const student = await studentService.updateResume(
-      studentId,
-      resumeStoragePath,
-    );
-    return NextResponse.json(
-      { message: "Resume updated", data: student },
-      { status: 200 },
-    );
+    if (typeof body.resumeStoragePath !== "string")
+      throw new ValidationError("resumeStoragePath is required");
+    const student = await studentService.setResume(id, body.resumeStoragePath);
+    return ok(student, "Resume updated");
   } catch (error) {
     return handleError(error);
   }
