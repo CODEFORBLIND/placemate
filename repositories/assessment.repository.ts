@@ -1,41 +1,17 @@
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database";
 
-type Assessment = Database["public"]["Tables"]["assessments"]["Row"];
-type AssessmentInsert = Database["public"]["Tables"]["assessments"]["Insert"];
-type AssessmentUpdate = Database["public"]["Tables"]["assessments"]["Update"];
+export type Assessment = Database["public"]["Tables"]["assessments"]["Row"];
+export type AssessmentInsert =
+  Database["public"]["Tables"]["assessments"]["Insert"];
+export type AssessmentUpdate =
+  Database["public"]["Tables"]["assessments"]["Update"];
 
-type AssessmentOptions = {
-  page?: number;
-  limit?: number;
-  sortBy?: "created_at" | "score";
-  ascending?: boolean;
-};
-
-export async function findByStudentId(
-  student_id: number,
-  options: AssessmentOptions = {},
-): Promise<Assessment[]> {
-  let query = supabase
-    .from("assessments")
-    .select("*")
-    .eq("student_id", student_id);
-
-  const { page = 1, limit = 20, sortBy = "score", ascending = false } = options;
-
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-
-  query = query.order(sortBy, { ascending });
-  query = query.range(from, to);
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch assessment : ${error.message}`);
-  }
-
-  return data;
+function toRange(page: number, limit: number) {
+  const safePage = page > 0 ? page : 1;
+  const safeLimit = limit > 0 && limit <= 100 ? limit : 20;
+  const from = (safePage - 1) * safeLimit;
+  return { from, to: from + safeLimit - 1 };
 }
 
 export async function findById(id: number): Promise<Assessment | null> {
@@ -44,11 +20,34 @@ export async function findById(id: number): Promise<Assessment | null> {
     .select("*")
     .eq("id", id)
     .maybeSingle();
+  if (error) throw new Error(`Failed to fetch assessment: ${error.message}`);
+  return data;
+}
 
-  if (error) {
-    throw new Error(`Failed to fetch assessment : ${error.message}`);
-  }
+export async function findMany(page = 1, limit = 20): Promise<Assessment[]> {
+  const { from, to } = toRange(page, limit);
+  const { data, error } = await supabase
+    .from("assessments")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  if (error) throw new Error(`Failed to fetch assessments: ${error.message}`);
+  return data;
+}
 
+export async function findByStudentId(
+  studentId: number,
+  page = 1,
+  limit = 20,
+): Promise<Assessment[]> {
+  const { from, to } = toRange(page, limit);
+  const { data, error } = await supabase
+    .from("assessments")
+    .select("*")
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  if (error) throw new Error(`Failed to fetch assessments: ${error.message}`);
   return data;
 }
 
@@ -60,11 +59,7 @@ export async function create(
     .insert(assessment)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to create assessment : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to create assessment: ${error.message}`);
   return data;
 }
 
@@ -78,10 +73,11 @@ export async function update(
     .eq("id", id)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to update assessment : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to update assessment: ${error.message}`);
   return data;
+}
+
+export async function remove(id: number): Promise<void> {
+  const { error } = await supabase.from("assessments").delete().eq("id", id);
+  if (error) throw new Error(`Failed to delete assessment: ${error.message}`);
 }

@@ -1,119 +1,23 @@
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database";
 
-type Application = Database["public"]["Tables"]["applications"]["Row"];
-type ApplicationInsert = Database["public"]["Tables"]["applications"]["Insert"];
-type ApplicationUpdate = Database["public"]["Tables"]["applications"]["Update"];
+export type Application = Database["public"]["Tables"]["applications"]["Row"];
+export type ApplicationInsert =
+  Database["public"]["Tables"]["applications"]["Insert"];
+export type ApplicationUpdate =
+  Database["public"]["Tables"]["applications"]["Update"];
 
-type ApplicationOptions = {
-  page?: number;
-  limit?: number;
-  sortBy?: "applied_on" | "created_at";
-  ascending?: boolean;
+export type ApplicationFilters = {
+  studentId?: number;
+  jobId?: number;
   status?: Database["public"]["Enums"]["application_status"];
 };
 
-export async function findByStudentId(
-  student_id: number,
-  options: ApplicationOptions = {},
-): Promise<Application[]> {
-  let query = supabase
-    .from("applications")
-    .select("*")
-    .eq("student_id", student_id);
-
-  if (options.status) {
-    query = query.eq("status", options.status);
-  }
-
-  const {
-    page = 1,
-    limit = 20,
-    sortBy = "applied_on",
-    ascending = false,
-  } = options;
-
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-
-  query = query.order(sortBy, { ascending });
-  query = query.range(from, to);
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch applications : ${error.message}`);
-  }
-
-  return data;
-}
-
-export async function findByJobId(
-  job_id: number,
-  options: ApplicationOptions = {},
-): Promise<Application[]> {
-  let query = supabase.from("applications").select("*").eq("job_id", job_id);
-
-  if (options.status) {
-    query = query.eq("status", options.status);
-  }
-
-  const {
-    page = 1,
-    limit = 20,
-    sortBy = "applied_on",
-    ascending = false,
-  } = options;
-
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-
-  query = query.order(sortBy, { ascending });
-  query = query.range(from, to);
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch applications : ${error.message}`);
-  }
-
-  return data;
-}
-
-export async function findByStudentAndJob(
-  student_id: number,
-  job_id: number,
-): Promise<Application | null> {
-  const { data, error } = await supabase
-    .from("applications")
-    .select("*")
-    .eq("student_id", student_id)
-    .eq("job_id", job_id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch application : ${error.message}`);
-  }
-
-  return data;
-}
-
-export async function exists(
-  student_id: number,
-  job_id: number,
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("applications")
-    .select("id")
-    .eq("student_id", student_id)
-    .eq("job_id", job_id)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to check application : ${error.message}`);
-  }
-
-  return data !== null;
+function toRange(page: number, limit: number) {
+  const safePage = page > 0 ? page : 1;
+  const safeLimit = limit > 0 && limit <= 100 ? limit : 20;
+  const from = (safePage - 1) * safeLimit;
+  return { from, to: from + safeLimit - 1 };
 }
 
 export async function findById(id: number): Promise<Application | null> {
@@ -122,12 +26,58 @@ export async function findById(id: number): Promise<Application | null> {
     .select("*")
     .eq("id", id)
     .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch application : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to fetch application: ${error.message}`);
   return data;
+}
+
+export async function findByStudentAndJob(
+  studentId: number,
+  jobId: number,
+): Promise<Application | null> {
+  const { data, error } = await supabase
+    .from("applications")
+    .select("*")
+    .eq("student_id", studentId)
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch application: ${error.message}`);
+  return data;
+}
+
+export async function findMany(
+  filters: ApplicationFilters = {},
+  page = 1,
+  limit = 20,
+): Promise<Application[]> {
+  let query = supabase.from("applications").select("*");
+
+  if (filters.studentId !== undefined)
+    query = query.eq("student_id", filters.studentId);
+  if (filters.jobId !== undefined) query = query.eq("job_id", filters.jobId);
+  if (filters.status) query = query.eq("status", filters.status);
+
+  const { from, to } = toRange(page, limit);
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  if (error) throw new Error(`Failed to fetch applications: ${error.message}`);
+  return data;
+}
+
+export async function findByStudentId(
+  studentId: number,
+  page = 1,
+  limit = 20,
+): Promise<Application[]> {
+  return findMany({ studentId }, page, limit);
+}
+
+export async function findByJobId(
+  jobId: number,
+  page = 1,
+  limit = 20,
+): Promise<Application[]> {
+  return findMany({ jobId }, page, limit);
 }
 
 export async function create(
@@ -138,11 +88,7 @@ export async function create(
     .insert(application)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to create application : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to create application: ${error.message}`);
   return data;
 }
 
@@ -156,10 +102,11 @@ export async function update(
     .eq("id", id)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to update application : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to update application: ${error.message}`);
   return data;
+}
+
+export async function remove(id: number): Promise<void> {
+  const { error } = await supabase.from("applications").delete().eq("id", id);
+  if (error) throw new Error(`Failed to delete application: ${error.message}`);
 }

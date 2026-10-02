@@ -1,63 +1,22 @@
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database";
 
-type Company = Database["public"]["Tables"]["companies"]["Row"];
-type CompanyInsert = Database["public"]["Tables"]["companies"]["Insert"];
-type CompanyUpdate = Database["public"]["Tables"]["companies"]["Update"];
+export type Company = Database["public"]["Tables"]["companies"]["Row"];
+export type CompanyInsert = Database["public"]["Tables"]["companies"]["Insert"];
+export type CompanyUpdate = Database["public"]["Tables"]["companies"]["Update"];
 
-type CompanyFilters = {
+export type CompanyFilters = {
+  name?: string;
   location?: string;
   industry?: string;
   isHiring?: boolean;
 };
 
-type CompanyOptions = {
-  page?: number;
-  limit?: number;
-  sortBy?: "name" | "created_at";
-  ascending?: boolean;
-};
-
-export async function findMany(
-  filters: CompanyFilters = {},
-  options: CompanyOptions = {},
-): Promise<Company[]> {
-  let query = supabase.from("companies").select("*");
-
-  if (filters.location) {
-    const escaped = filters.location.replace(/[%_\\]/g, "\\$&");
-    query = query.ilike("location", `%${escaped}%`);
-  }
-
-  if (filters.industry) {
-    const escaped = filters.industry.replace(/[%_\\]/g, "\\$&");
-    query = query.ilike("industry", `%${escaped}%`);
-  }
-
-  if (filters.isHiring !== undefined) {
-    query = query.eq("is_hiring", filters.isHiring);
-  }
-
-  const {
-    page = 1,
-    limit = 20,
-    sortBy = "created_at",
-    ascending = true,
-  } = options;
-
-  const from = (page - 1) * limit;
-  const to = from + limit - 1;
-
-  query = query.order(sortBy, { ascending });
-  query = query.range(from, to);
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to fetch companies : ${error.message}`);
-  }
-
-  return data;
+function toRange(page: number, limit: number) {
+  const safePage = page > 0 ? page : 1;
+  const safeLimit = limit > 0 && limit <= 100 ? limit : 20;
+  const from = (safePage - 1) * safeLimit;
+  return { from, to: from + safeLimit - 1 };
 }
 
 export async function findById(id: number): Promise<Company | null> {
@@ -66,25 +25,31 @@ export async function findById(id: number): Promise<Company | null> {
     .select("*")
     .eq("id", id)
     .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to fetch company : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to fetch company: ${error.message}`);
   return data;
 }
 
-export async function findByName(name: string): Promise<Company[]> {
-  const escaped = name.replace(/[%_\\]/g, "\\$&");
-  const { data, error } = await supabase
-    .from("companies")
-    .select("*")
-    .ilike("name", `%${escaped}%`);
+export async function findMany(
+  filters: CompanyFilters = {},
+  page = 1,
+  limit = 20,
+): Promise<Company[]> {
+  let query = supabase.from("companies").select("*");
 
-  if (error) {
-    throw new Error(`Failed to search company : ${error.message}`);
-  }
+  if (filters.name && filters.name.trim())
+    query = query.ilike("name", `%${filters.name.trim()}%`);
+  if (filters.location && filters.location.trim())
+    query = query.ilike("location", `%${filters.location.trim()}%`);
+  if (filters.industry && filters.industry.trim())
+    query = query.ilike("industry", `%${filters.industry.trim()}%`);
+  if (filters.isHiring !== undefined)
+    query = query.eq("is_hiring", filters.isHiring);
 
+  const { from, to } = toRange(page, limit);
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  if (error) throw new Error(`Failed to fetch companies: ${error.message}`);
   return data;
 }
 
@@ -94,11 +59,7 @@ export async function create(company: CompanyInsert): Promise<Company> {
     .insert(company)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to create company : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to create company: ${error.message}`);
   return data;
 }
 
@@ -112,10 +73,11 @@ export async function update(
     .eq("id", id)
     .select()
     .single();
-
-  if (error) {
-    throw new Error(`Failed to update company : ${error.message}`);
-  }
-
+  if (error) throw new Error(`Failed to update company: ${error.message}`);
   return data;
+}
+
+export async function remove(id: number): Promise<void> {
+  const { error } = await supabase.from("companies").delete().eq("id", id);
+  if (error) throw new Error(`Failed to delete company: ${error.message}`);
 }
