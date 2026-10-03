@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database";
+import { toRange } from "./util";
 
 export type Application = Database["public"]["Tables"]["applications"]["Row"];
 export type ApplicationInsert =
@@ -12,13 +13,6 @@ export type ApplicationFilters = {
   jobId?: number;
   status?: Database["public"]["Enums"]["application_status"];
 };
-
-function toRange(page: number, limit: number) {
-  const safePage = page > 0 ? page : 1;
-  const safeLimit = limit > 0 && limit <= 100 ? limit : 20;
-  const from = (safePage - 1) * safeLimit;
-  return { from, to: from + safeLimit - 1 };
-}
 
 export async function findById(id: number): Promise<Application | null> {
   const { data, error } = await supabase

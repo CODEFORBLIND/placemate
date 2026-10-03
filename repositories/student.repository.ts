@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { Database } from "@/types/database";
+import { toRange } from "./util";
 
 export type Student = Database["public"]["Tables"]["students"]["Row"];
 export type StudentInsert = Database["public"]["Tables"]["students"]["Insert"];
@@ -12,13 +13,6 @@ export type StudentFilters = {
   pcRole?: Database["public"]["Enums"]["pc_role"];
   search?: string;
 };
-
-function toRange(page: number, limit: number) {
-  const safePage = page > 0 ? page : 1;
-  const safeLimit = limit > 0 && limit <= 100 ? limit : 20;
-  const from = (safePage - 1) * safeLimit;
-  return { from, to: from + safeLimit - 1 };
-}
 
 export async function findById(id: number): Promise<Student | null> {
   const { data, error } = await supabase
